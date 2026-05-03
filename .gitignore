@@ -28,6 +28,7 @@ logs/
 
 # MongoDB
 .mongodb-data/
+data/
 
 # Runtime
 .node-gyp/

@@ -1,0 +1,60 @@
+version: '3.8'
+services:
+  mongo:
+    image: mongo:6.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/db:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo-init:
+    image: mongo:6.0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: ["sh", "-c", "mongosh --host mongo --eval \"rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo:27017'}]})\" || true"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/vibe?replicaSet=rs0
+      - NODE_ENV=production
+      - JWT_SECRET=change-this-secret
+    depends_on:
+      - mongo-init
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - BACKEND_URL=http://backend:3000
+    depends_on:
+      - backend
+
+  outbox-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: node src/workers/outboxPublisher.js
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/vibe?replicaSet=rs0
+      - OUTBOX_PUBLISH_URL=
+    depends_on:
+      - mongo-init
+
+volumes:
+  mongo-data:
+    driver: local
